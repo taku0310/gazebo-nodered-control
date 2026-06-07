@@ -59,12 +59,11 @@ services:
     environment:
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-42}
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-      - DISPLAY=${DISPLAY:-:0}
-      - QT_X11_NO_MITSHM=1
       - LIBGL_ALWAYS_SOFTWARE=${LIBGL_ALWAYS_SOFTWARE:-1}
-      - GAZEBO_HEADLESS=${GAZEBO_HEADLESS:-1}
-    volumes:
-      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - OGRE_RTT_MODE=Copy
+      - XVFB_RESOLUTION=${XVFB_RESOLUTION:-1280x800x24}
+    ports:
+      - "${GAZEBO_WEB_BIND:-127.0.0.1}:8080:8080"
     networks:
       - control_net
 

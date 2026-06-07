@@ -17,12 +17,20 @@
 
 | トピック | 型 | 方向 | 発行元 | 受信先 |
 |---|---|---|---|---|
-| `/cmd_vel` | `geometry_msgs/msg/Twist` | ブリッジ → シミュ | `mqtt_ros2_bridge` | Gazebo `libgazebo_ros_diff_drive` |
-| `/odom`    | `nav_msgs/msg/Odometry`   | シミュ → ブリッジ | Gazebo `libgazebo_ros_diff_drive` | `mqtt_ros2_bridge` |
-| `/tf`      | `tf2_msgs/msg/TFMessage`  | シミュ → *        | Gazebo diff_drive | RViz、ナビゲーション（任意） |
-| `/clock`   | `rosgraph_msgs/msg/Clock` | シミュ → *        | Gazebo            | 任意のシム時刻利用ノード |
+| `/cmd_vel` | `geometry_msgs/msg/Twist` | ブリッジ → シミュ | `mqtt_ros2_bridge` | `ros_gz_bridge`（→ gz `/cmd_vel`） |
+| `/odom`    | `nav_msgs/msg/Odometry`   | シミュ → ブリッジ | `ros_gz_bridge`（← gz `/odom`） | `mqtt_ros2_bridge` |
 
 `ROS_DOMAIN_ID=42` をブリッジと Gazebo コンテナで共有します。
+
+## gz transport（Gazebo Harmonic 内部）
+
+| トピック | 型 | 方向 | 発行元 | 受信先 |
+|---|---|---|---|---|
+| `/cmd_vel` | `gz.msgs.Twist`    | bridge → sim | `ros_gz_bridge` | `gz::sim::systems::DiffDrive` |
+| `/odom`    | `gz.msgs.Odometry` | sim → bridge | `gz::sim::systems::DiffDrive` | `ros_gz_bridge` |
+
+これらは gazebo コンテナ内部の `ros_gz_bridge` 経由でのみ翻訳されます。
+MQTT クライアントや SoftPLC から gz transport を意識する必要はありません。
 
 ## トピック ↔ ペイロード変換規則
 
@@ -32,6 +40,11 @@
 | `/odom` `Odometry` | `robot/odom` JSON | `pose.position.{x,y}` と `twist.twist.linear.x` / `angular.z` を抽出。`ODOM_THROTTLE_HZ` で間引き |
 | （内部生成） | `robot/status` | MQTT 接続成立時 / LWT 発火時に retained で発行 |
 | （内部生成） | `robot/alarm` | ウォッチドッグ状態遷移時に発行 |
+
+| ROS 2 | gz transport | 変換内容 |
+|---|---|---|
+| `/cmd_vel` `geometry_msgs/Twist` | `/cmd_vel` `gz.msgs.Twist` | `ros_gz_bridge` がフィールドを 1:1 マップ |
+| `/odom` `nav_msgs/Odometry` | `/odom` `gz.msgs.Odometry` | 同上 |
 
 ## 将来拡張トピック
 

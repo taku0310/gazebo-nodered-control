@@ -1,38 +1,32 @@
-"""Launch Gazebo Classic with the demo diff-drive world.
+"""Launch Gazebo Harmonic + ros_gz_bridge for the demo.
 
-Honors the ``GAZEBO_HEADLESS`` environment variable: when set to ``1``
-(or ``true``), only ``gzserver`` runs — useful inside CI or containers
-without X11. Otherwise both ``gzserver`` and ``gzclient`` start.
+Starts ``gz sim`` against the bundled SDF world (Harmonic / SDF 1.10)
+and a `ros_gz_bridge` parameter_bridge that wires the simulator's
+``/cmd_vel`` and ``/odom`` gz transport topics to their ROS 2
+equivalents, preserving the contract used by `mqtt_ros2_bridge`.
 """
 
 import os
 
 from launch import LaunchDescription
 from launch.actions import ExecuteProcess
-
-
-def _truthy(value: str) -> bool:
-    return value.lower() in ('1', 'true', 'yes', 'on')
+from launch_ros.actions import Node
 
 
 def generate_launch_description() -> LaunchDescription:
-    world_path = os.environ.get('WORLD_FILE', '/sim/worlds/diff_drive.world')
-    headless = _truthy(os.environ.get('GAZEBO_HEADLESS', '1'))
+    world_path = os.environ.get('WORLD_FILE', '/sim/worlds/diff_drive.sdf')
+    bridge_config = os.environ.get('BRIDGE_CONFIG', '/sim/config/ros_gz_bridge.yaml')
 
-    actions = [
+    return LaunchDescription([
         ExecuteProcess(
-            cmd=[
-                'gzserver',
-                '--verbose',
-                '-s', 'libgazebo_ros_init.so',
-                '-s', 'libgazebo_ros_factory.so',
-                world_path,
-            ],
+            cmd=['gz', 'sim', '-r', '-v', '4', world_path],
             output='screen',
         ),
-    ]
-
-    if not headless:
-        actions.append(ExecuteProcess(cmd=['gzclient', '--verbose'], output='screen'))
-
-    return LaunchDescription(actions)
+        Node(
+            package='ros_gz_bridge',
+            executable='parameter_bridge',
+            name='ros_gz_bridge',
+            arguments=['--ros-args', '-p', f'config_file:={bridge_config}'],
+            output='screen',
+        ),
+    ])

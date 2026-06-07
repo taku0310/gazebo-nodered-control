@@ -14,22 +14,31 @@ MQTT のトピック設計を唯一の安定した制御インターフェース
 ```mermaid
 flowchart LR
     subgraph Browser["ブラウザ"]
-      UI[Node-RED Dashboard UI]
+      UI[Node-RED Dashboard<br/>:1880/ui]
+      UI2[Gazebo 3D ビュー<br/>:8080/vnc.html]
     end
 
     subgraph control_net["Docker ネットワーク: control_net"]
       NR[nodered<br/>Node-RED 3.x]
       MB[mosquitto<br/>MQTT ブローカー]
       BR[ros2_bridge<br/>mqtt_ros2_bridge ノード]
-      GZ[gazebo<br/>gzserver + diff_drive プラグイン]
+      subgraph GZBOX["gazebo コンテナ"]
+        NV[Xvfb + x11vnc + noVNC]
+        RGB[ros_gz_bridge]
+        GZ[gz sim Harmonic<br/>diff_drive system]
+      end
     end
 
     UI -- HTTP/WebSocket --> NR
+    UI2 -- "WebSocket :8080" --> NV
+    NV --- GZ
     NR -- "robot/cmd_vel をパブリッシュ" --> MB
     MB -- "robot/cmd_vel をサブスクライブ" --> BR
-    BR -- "/cmd_vel を発行<br/>(geometry_msgs/Twist)" --> GZ
-    GZ -- "/odom を発行<br/>(nav_msgs/Odometry)" --> BR
-    BR -- "robot/odom<br/>robot/status<br/>robot/alarm を発行" --> MB
+    BR -- "ROS /cmd_vel<br/>(geometry_msgs/Twist)" --> RGB
+    RGB -- "gz /cmd_vel<br/>(gz.msgs.Twist)" --> GZ
+    GZ -- "gz /odom<br/>(gz.msgs.Odometry)" --> RGB
+    RGB -- "ROS /odom<br/>(nav_msgs/Odometry)" --> BR
+    BR -- "robot/odom<br/>robot/status<br/>robot/alarm" --> MB
     MB -- "サブスクライブ" --> NR
 ```
 
@@ -37,6 +46,12 @@ flowchart LR
   どちらかしか話しません。MQTT のトピック設計が公開された契約です。
 * **`control_logic` コンテナを廃止** — クランプ・ウォッチドッグ・指令
   整形はすべてブリッジノード内に集約し、稼働コンポーネントを 1 つ減らしました。
+* **Gazebo は Harmonic** — `gz sim` を `Xvfb` 仮想ディスプレイに描画し、
+  `x11vnc` + `noVNC` でブラウザに WebSocket 配信します。ホスト側に
+  XQuartz / VcXsrv は不要です。
+* **gz transport は `ros_gz_bridge` で ROS 2 と相互変換** — MQTT 層から
+  見える契約は ROS トピック (`/cmd_vel`, `/odom`) のままで、Gazebo の
+  内部トピックは隠蔽されます。
 * **DDS は Docker 内に閉じ込め** — `gazebo` と `ros2_bridge` は同じ
   `ROS_DOMAIN_ID` と `control_net` ブリッジネットワークを共有します。
   外部からは MQTT しか見えません。

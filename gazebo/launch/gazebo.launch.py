@@ -1,9 +1,14 @@
-"""Launch Gazebo Harmonic + ros_gz_bridge for the demo.
+"""Launch Gazebo Fortress + ros_gz_bridge for the demo.
 
-Starts ``gz sim`` against the bundled SDF world (Harmonic / SDF 1.10)
+Starts ``ign gazebo`` against the bundled SDF world (Fortress / SDF 1.9)
 and a `ros_gz_bridge` parameter_bridge that wires the simulator's
 ``/cmd_vel`` and ``/odom`` gz transport topics to their ROS 2
 equivalents, preserving the contract used by `mqtt_ros2_bridge`.
+
+Fortress (Gazebo Sim 6.x) is the officially supported "new Gazebo"
+for ROS 2 Humble. The visual experience matches Harmonic; only the
+plugin namespace (``ignition::gazebo::*``) and message type names
+(``ignition.msgs.*``) differ.
 """
 
 import os
@@ -19,7 +24,7 @@ def generate_launch_description() -> LaunchDescription:
 
     return LaunchDescription([
         ExecuteProcess(
-            cmd=['gz', 'sim', '-r', '-v', '4', world_path],
+            cmd=['ign', 'gazebo', '-r', '-v', '4', world_path],
             output='screen',
         ),
         Node(

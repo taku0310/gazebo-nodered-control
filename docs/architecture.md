@@ -25,7 +25,7 @@ flowchart LR
       subgraph GZBOX["gazebo コンテナ"]
         NV[Xvfb + x11vnc + noVNC]
         RGB[ros_gz_bridge]
-        GZ[gz sim Harmonic<br/>diff_drive system]
+        GZ[ign gazebo Fortress<br/>diff_drive system]
       end
     end
 
@@ -46,9 +46,11 @@ flowchart LR
   どちらかしか話しません。MQTT のトピック設計が公開された契約です。
 * **`control_logic` コンテナを廃止** — クランプ・ウォッチドッグ・指令
   整形はすべてブリッジノード内に集約し、稼働コンポーネントを 1 つ減らしました。
-* **Gazebo は Harmonic** — `gz sim` を `Xvfb` 仮想ディスプレイに描画し、
-  `x11vnc` + `noVNC` でブラウザに WebSocket 配信します。ホスト側に
-  XQuartz / VcXsrv は不要です。
+* **Gazebo は Fortress (Gazebo Sim 6.x)** — `ign gazebo` を `Xvfb` 仮想
+  ディスプレイに描画し、`x11vnc` + `noVNC` でブラウザに WebSocket 配信
+  します。ホスト側に XQuartz / VcXsrv は不要です。ROS 2 Humble での
+  公式バイナリペアは Fortress までで、Harmonic を使う場合は ros_gz の
+  ソースビルドが必要になります。
 * **gz transport は `ros_gz_bridge` で ROS 2 と相互変換** — MQTT 層から
   見える契約は ROS トピック (`/cmd_vel`, `/odom`) のままで、Gazebo の
   内部トピックは隠蔽されます。

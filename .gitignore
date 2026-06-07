@@ -1,0 +1,9 @@
+.env
+nodered/data/
+mosquitto/data/
+mosquitto/log/
+ros2_bridge/ws/build/
+ros2_bridge/ws/install/
+ros2_bridge/ws/log/
+__pycache__/
+*.pyc

@@ -1,0 +1,78 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    restart: unless-stopped
+    ports:
+      - "${MQTT_BIND:-127.0.0.1}:1883:1883"
+      - "${MQTT_WS_BIND:-127.0.0.1}:9001:9001"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    networks:
+      - control_net
+
+  nodered:
+    build: ./nodered
+    container_name: nodered
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-Asia/Tokyo}
+    ports:
+      - "${NODERED_BIND:-127.0.0.1}:1880:1880"
+    volumes:
+      - nodered_data:/data
+      - ./nodered/flows.json:/data/flows.json:ro
+    depends_on:
+      - mosquitto
+    networks:
+      - control_net
+
+  ros2_bridge:
+    build: ./ros2_bridge
+    container_name: ros2_bridge
+    restart: unless-stopped
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-42}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - MQTT_HOST=mosquitto
+      - MQTT_PORT=1883
+      - MQTT_CMD_TOPIC=robot/cmd_vel
+      - MQTT_STATUS_TOPIC=robot/status
+      - MQTT_ODOM_TOPIC=robot/odom
+      - MQTT_ALARM_TOPIC=robot/alarm
+      - ROS_CMD_VEL_TOPIC=/cmd_vel
+      - ROS_ODOM_TOPIC=/odom
+      - WATCHDOG_SEC=1.0
+      - MAX_LINEAR=2.0
+      - MAX_ANGULAR=2.0
+    depends_on:
+      - mosquitto
+    networks:
+      - control_net
+
+  gazebo:
+    build: ./gazebo
+    container_name: gazebo
+    restart: unless-stopped
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-42}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - DISPLAY=${DISPLAY:-:0}
+      - QT_X11_NO_MITSHM=1
+      - LIBGL_ALWAYS_SOFTWARE=${LIBGL_ALWAYS_SOFTWARE:-1}
+      - GAZEBO_HEADLESS=${GAZEBO_HEADLESS:-1}
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    networks:
+      - control_net
+
+networks:
+  control_net:
+    driver: bridge
+
+volumes:
+  mosquitto_data:
+  mosquitto_log:
+  nodered_data:

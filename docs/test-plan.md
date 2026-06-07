@@ -1,30 +1,30 @@
-# Test Plan
+# テスト仕様書
 
-QA owns this document. Each scenario lists the steps, the expected
-result, and the commands a human can run to verify.
+QA 担当が本書を保守します。各シナリオに手順・期待結果・検証コマンドを
+記載します。
 
-Prereqs: stack is up (`docker compose up -d`), all four containers in
-`docker compose ps` show `running`/`healthy`.
+前提: スタックが起動済み (`docker compose up -d`) で、`docker compose ps`
+の出力で 4 コンテナがすべて `running` / `healthy` 状態であること。
 
-A handy one-liner subscriber for any human watcher:
+人が観測する場合の汎用サブスクライバ:
 
 ```bash
 docker compose exec mosquitto mosquitto_sub -v -t 'robot/#'
 ```
 
-## T1 — Happy-path drive (golden path)
+## T1 — 正常系走行（ゴールデンパス）
 
-| Step | Action | Expected |
+| 手順 | 操作 | 期待結果 |
 |---|---|---|
-| 1 | Open `http://127.0.0.1:1880/ui` | Dashboard renders Drive, Speed, Telemetry groups. |
-| 2 | Set Speed slider = 1.0 | No movement yet (button required). |
-| 3 | Click "Forward" | `robot/cmd_vel` carries `{"linear_x":1,"angular_z":0}`. |
-| 4 | Watch Telemetry | `Bridge: online`, `Odom: x=… y=… v=…` increasing. |
-| 5 | Click "Stop" | Robot decelerates to rest; odom `v` → 0. |
-| 6 | Click "Left" then "Right" | `angular_z` flips sign, `linear_x` = 0. |
-| 7 | Click "Backward" | `linear_x` = -1, robot reverses. |
+| 1 | `http://127.0.0.1:1880/ui` を開く | Drive / Speed / Telemetry の各グループが表示される |
+| 2 | Speed スライダーを 1.0 に設定 | まだ動かない（ボタンが必要） |
+| 3 | 「前進」をクリック | `robot/cmd_vel` に `{"linear_x":1,"angular_z":0}` が流れる |
+| 4 | Telemetry を確認 | `Bridge: online` / `Odom: x=… y=… v=…` が増加 |
+| 5 | 「停止」をクリック | 減速して停止。odom の `v` → 0 |
+| 6 | 「左旋回」→「右旋回」をクリック | `angular_z` の符号が反転、`linear_x` = 0 |
+| 7 | 「後退」をクリック | `linear_x` = -1、ロボットが後退 |
 
-Verify command translation with:
+指令変換は次のコマンドで検証します:
 
 ```bash
 docker compose exec ros2_bridge bash -lc \
@@ -32,70 +32,70 @@ docker compose exec ros2_bridge bash -lc \
    && ros2 topic echo /cmd_vel --once'
 ```
 
-## T2 — MQTT command validation
+## T2 — MQTT 入力検証
 
-| # | Input on `robot/cmd_vel` | Expected on `/cmd_vel` |
+| # | `robot/cmd_vel` への入力 | `/cmd_vel` 上の期待値 |
 |---|---|---|
 | 2.1 | `{"linear_x":0.5,"angular_z":0.5}` | `linear.x=0.5, angular.z=0.5` |
-| 2.2 | `{"linear_x":99,"angular_z":0}` | clamped: `linear.x=2.0` (MAX_LINEAR) |
-| 2.3 | `{"linear_x":"oops"}` | nothing; bridge logs `bad numeric fields`. |
-| 2.4 | non-JSON bytes | nothing; bridge logs `bad JSON on robot/cmd_vel`. |
-| 2.5 | `{"linear_x":NaN,"angular_z":0}` (raw) | nothing; bridge logs `non-finite command rejected`. |
+| 2.2 | `{"linear_x":99,"angular_z":0}` | クランプ: `linear.x=2.0` (MAX_LINEAR) |
+| 2.3 | `{"linear_x":"oops"}` | 反映されず、ブリッジが `bad numeric fields` をログ出力 |
+| 2.4 | JSON 以外のバイト列 | 反映されず、`bad JSON on robot/cmd_vel` をログ出力 |
+| 2.5 | `{"linear_x":NaN,"angular_z":0}`（生バイト） | 反映されず、`non-finite command rejected` をログ出力 |
 
-Send with:
+送信コマンド:
 
 ```bash
 docker compose exec mosquitto mosquitto_pub -t robot/cmd_vel \
     -m '{"linear_x":99,"angular_z":0}'
 ```
 
-## T3 — Watchdog (command timeout)
+## T3 — ウォッチドッグ（指令タイムアウト）
 
-| Step | Action | Expected |
+| 手順 | 操作 | 期待結果 |
 |---|---|---|
-| 1 | Publish a moving command, wait > `WATCHDOG_SEC` (default 1.0 s). | `/cmd_vel` returns to zero; odom velocities decay to 0. |
-| 2 | Inspect `robot/alarm`. | Single `WATCHDOG_TIMEOUT` event. |
-| 3 | Publish a new command. | Single `WATCHDOG_CLEAR` event. |
+| 1 | 動作指令を 1 回送信し、`WATCHDOG_SEC`（既定 1.0 秒）以上待機 | `/cmd_vel` がゼロに戻り、odom 速度も 0 に収束 |
+| 2 | `robot/alarm` を確認 | `WATCHDOG_TIMEOUT` イベントが 1 件 |
+| 3 | 新規指令を送信 | `WATCHDOG_CLEAR` イベントが 1 件 |
 
 ```bash
 docker compose exec mosquitto mosquitto_sub -t 'robot/alarm' -v &
 docker compose exec mosquitto mosquitto_pub -t robot/cmd_vel -m '{"linear_x":0.5}'
-sleep 2  # exceeds watchdog
+sleep 2  # ウォッチドッグ時間を超過
 ```
 
-## T4 — Broker outage
+## T4 — ブローカー停止試験
 
-| Step | Action | Expected |
+| 手順 | 操作 | 期待結果 |
 |---|---|---|
-| 1 | `docker compose stop mosquitto` | Bridge logs `MQTT disconnected`. Within `WATCHDOG_SEC`, `/cmd_vel` is forced to zero. |
-| 2 | `docker compose start mosquitto` | Bridge reconnects (backoff up to 30 s). On reconnect, `robot/status` is re-published as `online`. |
-| 3 | Dashboard reloads `/ui` | Buttons resume working. |
+| 1 | `docker compose stop mosquitto` | ブリッジが `MQTT disconnected` をログ出力。`WATCHDOG_SEC` 以内に `/cmd_vel` がゼロに強制される |
+| 2 | `docker compose start mosquitto` | ブリッジが再接続（バックオフ最大 30 秒）。再接続時に `robot/status` に `online` が再発行される |
+| 3 | ダッシュボードで `/ui` を再読込 | ボタン操作が復活する |
 
-While the broker is down, the Last Will retains: on next subscriber
-connect, the first delivered `robot/status` is `{"state":"offline"}`,
-then `online` arrives after the bridge republishes.
+ブローカー停止中は LWT が retained 済み。新たな購読者は最初に
+`robot/status = {"state":"offline"}` を受信し、その後ブリッジ復帰で
+`online` が届きます。
 
-## T5 — Bridge outage
+## T5 — ブリッジ停止試験
 
-| Step | Action | Expected |
+| 手順 | 操作 | 期待結果 |
 |---|---|---|
-| 1 | `docker compose stop ros2_bridge` | Mosquitto publishes the LWT: `robot/status = {"state":"offline"}` (retained). Dashboard "Bridge" pill flips to offline. |
-| 2 | Commands keep being published from the dashboard. | No effect on Gazebo (robot stays still). No errors in `gazebo` container. |
-| 3 | `docker compose start ros2_bridge` | `robot/status` flips back to `online`. Robot responds again. |
+| 1 | `docker compose stop ros2_bridge` | Mosquitto が LWT を発行: `robot/status = {"state":"offline"}`（retained）。ダッシュボードの "Bridge" が offline に切り替わる |
+| 2 | ダッシュボードから指令を送り続ける | Gazebo は無反応（ロボットは静止）、`gazebo` コンテナにエラーは出ない |
+| 3 | `docker compose start ros2_bridge` | `robot/status` が `online` に戻り、ロボットが再び応答する |
 
-## T6 — Gazebo outage
+## T6 — Gazebo 停止試験
 
-| Step | Action | Expected |
+| 手順 | 操作 | 期待結果 |
 |---|---|---|
-| 1 | `docker compose stop gazebo` | `/cmd_vel` is still published by the bridge but goes unconsumed. No alarms (this is intentional for v1; see backlog). |
-| 2 | `docker compose start gazebo` | Robot resumes responding within a few seconds of `/cmd_vel`. |
+| 1 | `docker compose stop gazebo` | ブリッジは `/cmd_vel` を発行し続けるが消費されない。v1 では意図的にアラーム化していない（バックログ参照） |
+| 2 | `docker compose start gazebo` | 数秒以内に `/cmd_vel` への応答が復帰する |
 
-Backlog: a future `GAZEBO_UNREACHABLE` alarm could be added by having
-the bridge time-out on missing `/odom`.
+バックログ: `/odom` 未受信を検出して `GAZEBO_UNREACHABLE` アラームを
+発行するロジックは今後の拡張候補。
 
-## T7 — Smoke test from the shell
+## T7 — シェルだけで実施する E2E スモークテスト
 
-End-to-end without the dashboard:
+ダッシュボードを経由せず MQTT 契約のみで動作することを確認します。
 
 ```bash
 docker compose exec mosquitto mosquitto_pub -t robot/cmd_vel \
@@ -106,10 +106,11 @@ docker compose exec ros2_bridge bash -lc \
    && ros2 topic echo /odom --once' | grep -E 'linear|x:'
 ```
 
-Expected: `linear.x` > 0 and `pose.position.x` advancing.
+期待結果: `linear.x` > 0、`pose.position.x` が増加。
 
-## Pass criteria
+## 合格判定
 
-* T1, T2, T3, T4, T5 pass on a clean checkout via `docker compose up`.
-* T6 demonstrates graceful degradation (no crashes).
-* T7 succeeds without the dashboard, proving MQTT is the only contract.
+* T1、T2、T3、T4、T5 が `docker compose up` のみで再現できる。
+* T6 で停止 → 復旧の流れがクラッシュなく成立する。
+* T7 がダッシュボード非経由で成功し、MQTT が唯一の契約であることが
+  実証される。

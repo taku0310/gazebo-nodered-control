@@ -1,88 +1,87 @@
 # gazebo-nodered-control
 
-A Node-RED → MQTT → ROS 2 → Gazebo control demonstrator.
+Node-RED → MQTT → ROS 2 → Gazebo で動作する制御デモシステムです。
 
 ```
-Node-RED Dashboard  ──►  Mosquitto  ──►  mqtt_ros2_bridge (ROS 2)  ──►  Gazebo
-                              ▲                  │
-                              └──── robot/status, robot/odom, robot/alarm
+Node-RED ダッシュボード  ──►  Mosquitto  ──►  mqtt_ros2_bridge (ROS 2)  ──►  Gazebo
+                                  ▲                  │
+                                  └──── robot/status, robot/odom, robot/alarm
 ```
 
-The MQTT topic surface is the **single control interface**. Node-RED
-plays the role of a manual operator UI today; tomorrow a SoftPLC can
-publish the same JSON commands and the ROS 2 side won't notice. See
-[`docs/softplc-migration.md`](docs/softplc-migration.md).
+MQTT のトピック設計が**唯一の制御インターフェース**です。
+現時点では Node-RED が手動操作 UI を担っていますが、将来 SoftPLC が同じ
+JSON を送信するだけで ROS 2 側に一切の変更なく置換できます。
+詳細は [`docs/softplc-migration.md`](docs/softplc-migration.md) を参照してください。
 
-## Layout
+## ディレクトリ構成
 
 ```
 .
-├── docker-compose.yml          # one-command stack
-├── .env.example                # copy to .env to override
+├── docker-compose.yml          # ワンコマンド起動用
+├── .env.example                # コピーして .env で上書き
 ├── docs/
-│   ├── architecture.md         # system + data-flow diagrams
-│   ├── mqtt-spec.md            # the MQTT contract
-│   ├── topics.md               # combined MQTT + ROS 2 topic list
-│   ├── test-plan.md            # QA scenarios
-│   └── softplc-migration.md    # staged plan to replace Node-RED
-├── mosquitto/config/           # broker config
+│   ├── architecture.md         # システム構成図・データフロー図
+│   ├── mqtt-spec.md            # MQTT 仕様書
+│   ├── topics.md               # MQTT + ROS 2 トピック一覧
+│   ├── test-plan.md            # QA テスト手順
+│   └── softplc-migration.md    # SoftPLC 移行計画
+├── mosquitto/config/           # ブローカー設定
 ├── nodered/
 │   ├── Dockerfile              # Node-RED + node-red-dashboard
-│   └── flows.json              # importable Dashboard flow
+│   └── flows.json              # インポート可能な Dashboard フロー
 ├── ros2_bridge/
-│   ├── Dockerfile              # ros:humble + paho-mqtt + workspace
-│   └── ws/src/mqtt_ros2_bridge # the bridge node package
+│   ├── Dockerfile              # ros:humble + paho-mqtt + ワークスペース
+│   └── ws/src/mqtt_ros2_bridge # ブリッジノードパッケージ
 └── gazebo/
     ├── Dockerfile              # ros:humble-desktop + gazebo_ros_pkgs
-    └── worlds/diff_drive.world # diff-drive robot + libgazebo_ros_diff_drive
+    └── worlds/diff_drive.world # 差動駆動ロボット + libgazebo_ros_diff_drive
 ```
 
-## Requirements
+## 動作要件
 
-* Docker Engine 24+ with Compose v2.
-* ~4 GB free disk for first-time image builds.
-* (Optional) X11 server on the host if you want to see Gazebo with
-  `gzclient`.
+* Docker Engine 24 以上 + Compose v2
+* 初回ビルド用に約 4 GB のディスク空き容量
+* （任意）Gazebo の GUI (`gzclient`) を表示する場合はホスト側に X11 サーバー
 
-## Start
+## 起動手順
 
 ```bash
-cp .env.example .env             # optional — defaults are fine
+cp .env.example .env             # 任意。デフォルトのままでも動作します
 docker compose up --build -d
 ```
 
-Wait for the four containers to settle (first run pulls and builds; ~5
-minutes depending on network):
+4 つのコンテナが立ち上がるまで待ちます（初回はイメージのプル + ビルドで
+ネットワーク次第 5 分程度かかります）。
 
 ```bash
 docker compose ps
 ```
 
-Open the dashboard at **http://127.0.0.1:1880/ui**.
+ダッシュボードを **http://127.0.0.1:1880/ui** で開きます。
 
-Click the direction buttons. Watch the "Bridge" pill flip to `online`
-and the "Odom" line update as the robot moves.
+方向ボタンをクリックすると "Bridge" が `online` になり、"Odom" の値が更新され
+ロボットが移動します。
 
-## Stop
+## 停止手順
 
 ```bash
-docker compose down              # keep volumes
-docker compose down -v           # also wipe broker/Node-RED state
+docker compose down              # ボリュームは残す
+docker compose down -v           # ブローカー / Node-RED の状態も削除
 ```
 
-## Operating the demo
+## 操作方法
 
-| Action | UI control | MQTT payload |
+| 動作 | UI ボタン | 送信される MQTT ペイロード |
 |---|---|---|
-| Forward  | ▲ | `{"linear_x": +speed, "angular_z": 0}` |
-| Backward | ▼ | `{"linear_x": -speed, "angular_z": 0}` |
-| Left     | ◀ | `{"linear_x": 0, "angular_z": +speed}` |
-| Right    | ▶ | `{"linear_x": 0, "angular_z": -speed}` |
-| Stop     | ■ | `{"linear_x": 0, "angular_z": 0}` |
+| 前進  | ▲ | `{"linear_x": +speed, "angular_z": 0}` |
+| 後退  | ▼ | `{"linear_x": -speed, "angular_z": 0}` |
+| 左旋回 | ◀ | `{"linear_x": 0, "angular_z": +speed}` |
+| 右旋回 | ▶ | `{"linear_x": 0, "angular_z": -speed}` |
+| 停止   | ■ | `{"linear_x": 0, "angular_z": 0}` |
 
-`speed` is set by the Speed slider (default 1.0, range 0–2).
+`speed` は Speed スライダーで設定します（既定 1.0、範囲 0〜2）。
 
-Drive headlessly with `mosquitto_pub` to prove the MQTT contract:
+ダッシュボードを経由せず `mosquitto_pub` で直接 MQTT 契約を検証できます。
 
 ```bash
 docker compose exec mosquitto mosquitto_pub \
@@ -90,7 +89,7 @@ docker compose exec mosquitto mosquitto_pub \
 docker compose exec mosquitto mosquitto_sub -v -t 'robot/#'
 ```
 
-Tail the ROS 2 side from inside the bridge container:
+ブリッジコンテナの内側から ROS 2 側を確認する場合は次のとおりです。
 
 ```bash
 docker compose exec ros2_bridge bash -lc \
@@ -98,40 +97,40 @@ docker compose exec ros2_bridge bash -lc \
      && ros2 topic echo /cmd_vel --once'
 ```
 
-## Seeing Gazebo (optional)
+## Gazebo の GUI 表示（任意）
 
-By default Gazebo runs headless (`GAZEBO_HEADLESS=1`). To see the
-robot move on a Linux host:
+既定ではヘッドレスで起動します (`GAZEBO_HEADLESS=1`)。
+Linux ホストでロボットの動きを目視したい場合は以下のとおりです。
 
 ```bash
 xhost +local:docker
 GAZEBO_HEADLESS=0 docker compose up -d gazebo
 ```
 
-Then a `gzclient` window will attach to the in-container `gzserver`
-on the next start. On macOS / Windows, use XQuartz / VcXsrv or run
-`gzclient` natively against the same `GAZEBO_MASTER_URI`.
+次回起動時にコンテナ内の `gzserver` に対して `gzclient` のウィンドウが
+表示されます。macOS / Windows では XQuartz / VcXsrv 経由、もしくは
+ホスト側で `gzclient` を起動して同一の `GAZEBO_MASTER_URI` に接続してください。
 
-## Tests
+## テスト
 
-Manual scenarios live in [`docs/test-plan.md`](docs/test-plan.md).
-They cover the happy path, payload validation, the watchdog, and
-isolated failures of the broker, the bridge, and Gazebo.
+手動テストの手順は [`docs/test-plan.md`](docs/test-plan.md) にあります。
+正常系、ペイロード検証、ウォッチドッグ、ブローカー / ブリッジ / Gazebo
+それぞれの停止試験を網羅しています。
 
-## Configuration
+## 設定項目
 
-Everything tunable is an env var on the `ros2_bridge` service. See the
-table in [`docs/architecture.md`](docs/architecture.md#4-configuration-surface).
+調整可能な項目はすべて `ros2_bridge` サービスの環境変数として公開しています。
+一覧は [`docs/architecture.md`](docs/architecture.md#4-設定項目) を参照してください。
 
-## How it differs from `gazebo-keyboard-control`
+## 参考リポジトリ (`gazebo-keyboard-control`) との差分
 
-| Original | This repo |
+| 元リポジトリ | 本リポジトリ |
 |---|---|
-| `keyboard_input` over TCP | Node-RED Dashboard over MQTT |
-| Dedicated `control_logic` container with clamping + smoothing | Clamping + watchdog live in the bridge; no extra container |
-| ROS 2 Jazzy + Gazebo Harmonic | ROS 2 Humble + Gazebo Classic 11 (gazebo_ros_pkgs) |
-| TCP boundary | MQTT boundary — same broker can serve a SoftPLC later |
+| `keyboard_input` が TCP で送信 | Node-RED Dashboard が MQTT で送信 |
+| `control_logic` コンテナがクランプ・スムージングを担当 | クランプとウォッチドッグはブリッジ内に統合し、専用コンテナを廃止 |
+| ROS 2 Jazzy + Gazebo Harmonic | ROS 2 Humble + Gazebo Classic 11 (`gazebo_ros_pkgs`) |
+| TCP 境界 | MQTT 境界。同じブローカーに将来 SoftPLC を接続可能 |
 
-## License
+## ライセンス
 
-Apache-2.0 (matches the upstream reference repo).
+Apache-2.0（参考リポジトリと同一）

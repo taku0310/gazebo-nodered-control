@@ -64,7 +64,10 @@ class MqttRos2Bridge(Node):
         self._last_cmd = (0.0, 0.0)
         # Start "stale" so we publish zero until a real command arrives.
         self._last_cmd_time = 0.0
-        self._was_stale = True
+        # Whether a WATCHDOG_TIMEOUT alarm is currently active. Stays False
+        # until at least one valid command has been seen and then lost —
+        # avoids a spurious CLEAR on the first command after startup.
+        self._alarm_active = False
         self._last_odom_pub = 0.0
 
         self._mqtt = mqtt.Client(client_id='ros2_bridge', clean_session=True)
@@ -154,11 +157,16 @@ class MqttRos2Bridge(Node):
         now = time.monotonic()
         with self._lock:
             cmd = self._last_cmd
-            stale = (now - self._last_cmd_time) > self.watchdog_sec
+            last_cmd_time = self._last_cmd_time
+            stale = (now - last_cmd_time) > self.watchdog_sec
+
+        ever_received = last_cmd_time > 0.0
 
         if stale:
             cmd = (0.0, 0.0)
-            if not self._was_stale:
+            # Only fire TIMEOUT after we've actually seen at least one
+            # command — startup with no traffic is not an alarm.
+            if ever_received and not self._alarm_active:
                 self._mqtt.publish(
                     self.alarm_topic,
                     json.dumps({'code': 'WATCHDOG_TIMEOUT',
@@ -166,15 +174,15 @@ class MqttRos2Bridge(Node):
                     qos=1,
                 )
                 self.get_logger().warning('watchdog: publishing zero velocity')
-            self._was_stale = True
+                self._alarm_active = True
         else:
-            if self._was_stale:
+            if self._alarm_active:
                 self._mqtt.publish(
                     self.alarm_topic,
                     json.dumps({'code': 'WATCHDOG_CLEAR', 'detail': 'cmd_vel resumed'}),
                     qos=1,
                 )
-            self._was_stale = False
+                self._alarm_active = False
 
         twist = Twist()
         twist.linear.x = float(cmd[0])
